@@ -27,10 +27,8 @@
 
 package net.starschema.clouddb.jdbc;
 
-import com.google.api.services.bigquery.Bigquery;
 import com.google.api.services.bigquery.model.*;
 import org.antlr.runtime.tree.Tree;
-import net.starschema.clouddb.jdbc.Logger;
 
 import java.io.IOException;
 import java.sql.*;
@@ -48,6 +46,18 @@ import java.util.Random;
  * @author Balazs Gunics
  */
 public abstract class BQStatementRoot {
+
+    private static class TableName {
+        String projectId;
+        String dataSetId;
+        String tableId;
+
+        TableName(String projectId, String dataSetId, String tableId) {
+            this.projectId = projectId;
+            this.dataSetId = dataSetId;
+            this.tableId = tableId;
+        }
+    }
 
     /**
      * Reference to store the ran Query run by Executequery or Execute
@@ -456,16 +466,43 @@ public abstract class BQStatementRoot {
         throw new BQSQLFeatureNotSupportedException(updateSql);
     }
 
+    private TableName parseTableName(Tree tableNameTree) throws SQLException {
+        String projectId = ProjectId;
+        String dataSetId;
+        String tableId;
+
+        int childCount = tableNameTree.getChildCount();
+        // No project specified.
+        if (childCount == 2) {
+            dataSetId = tableNameTree.getChild(0).getText();
+            tableId = tableNameTree.getChild(1).getText();
+        } else {
+            Tree projectNames = tableNameTree.getChild(0);
+            if (projectNames.getChildCount() > 1) {
+                throw new BQSQLException("Wrapping project, dataset and table with backticks " +
+                    "(e.g. `project.dataset.table`) are not supported. Please only wrap project " +
+                    "(e.g. `project`.dataset.table).");
+            }
+
+            projectId = projectNames.getChild(0).getChild(0).getText();
+            dataSetId = tableNameTree.getChild(1).getText();
+            tableId = tableNameTree.getChild(2).getText();
+        }
+
+        return new TableName(projectId, dataSetId, tableId);
+    }
+
     protected int executeCreateTable(Tree tree) throws SQLException {
         TableSchema schema = new TableSchema();
 
         // Extract table name from the first child.
-        Tree table_name_tree = tree.getChild(0);
-        if (table_name_tree.getText() != "SOURCETABLE" || table_name_tree.getChildCount() != 2) {
+        Tree tableNameTree = tree.getChild(0);
+        int childCount = tableNameTree.getChildCount();
+        if (tableNameTree.getText() != "SOURCETABLE" || (childCount != 2 && childCount != 3)) {
             throw new BQSQLException("Error with table name in CREATE TABLE");
         }
-        final String dataSetId = table_name_tree.getChild(0).getText();
-        final String tableId = table_name_tree.getChild(1).getText();
+
+        TableName tableName = parseTableName(tableNameTree);
 
         // Extract column definitions from the second and subsequent children.
         ArrayList<TableFieldSchema> tableFieldSchema = new ArrayList<TableFieldSchema>();
@@ -515,12 +552,13 @@ public abstract class BQStatementRoot {
         Table table = new Table();
         table.setSchema(schema);
         TableReference tableRef = new TableReference();
-        tableRef.setDatasetId(dataSetId);
-        tableRef.setProjectId(this.ProjectId);
-        tableRef.setTableId(tableId);
+        tableRef.setDatasetId(tableName.dataSetId);
+        tableRef.setProjectId(tableName.projectId);
+        tableRef.setTableId(tableName.tableId);
         table.setTableReference(tableRef);
         try {
-            this.connection.getBigquery().tables().insert(this.ProjectId, dataSetId, table).execute();
+            this.connection.getBigquery().tables()
+                .insert(tableName.projectId, tableName.dataSetId, table).execute();
         } catch (IOException e) {
             throw new BQSQLException("Failed to CREATE TABLE: ", e);
         }
@@ -528,13 +566,15 @@ public abstract class BQStatementRoot {
     }
 
     private int executeDropTable(Tree tree, String updateSql) throws SQLException {
-        // Extract table name from the first child.
-        Tree table_name_tree = tree.getChild(0);
-        if (table_name_tree.getText() != "SOURCETABLE" || table_name_tree.getChildCount() != 2) {
+        // Extract table name from the first or second child.
+        Tree tableNameTree = tree.getChild(0);
+
+        int childCount = tableNameTree.getChildCount();
+        if (tableNameTree.getText() != "SOURCETABLE" || (childCount != 2 && childCount != 3)) {
             throw new BQSQLException("Error with table name in DROP TABLE: " + updateSql);
         }
-        final String dataSetId = table_name_tree.getChild(0).getText();
-        final String tableId = table_name_tree.getChild(1).getText();
+
+        TableName tableName = parseTableName(tableNameTree);
 
         // Check if IF EXISTS was specified
         boolean if_exists = false;
@@ -547,7 +587,8 @@ public abstract class BQStatementRoot {
         // Check if the table exists
         boolean found = false;
         try {
-            this.connection.getBigquery().tables().get(this.ProjectId, dataSetId, tableId).execute();
+            this.connection.getBigquery().tables()
+                .get(tableName.projectId, tableName.dataSetId, tableName.tableId).execute();
             found = true;
         } catch (IOException e) {
             // found is already false
@@ -559,12 +600,14 @@ public abstract class BQStatementRoot {
                 return 0;
             } else {
                 // Table doesn't exists and IF EXISTS was not specified.  Error.
-                throw new BQSQLException("Failed to DROP non-existent table: " + dataSetId + "." + tableId);
+                throw new BQSQLException("Failed to DROP non-existent table: " +
+                    tableName.dataSetId + "." + tableName.tableId);
             }
         }
 
         try {
-            this.connection.getBigquery().tables().delete(this.ProjectId, dataSetId, tableId).execute();
+            this.connection.getBigquery().tables()
+                .delete(tableName.projectId, tableName.dataSetId, tableName.tableId).execute();
         } catch (IOException e) {
             throw new BQSQLException("Failed to DROP TABLE: ", e);
         }

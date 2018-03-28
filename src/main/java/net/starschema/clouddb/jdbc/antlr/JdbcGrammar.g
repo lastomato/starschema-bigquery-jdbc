@@ -147,8 +147,9 @@ columndefinition
 ;
 
 tabledefinition
-:  IDENTIFIER (columndivider IDENTIFIER)*
-   ->^(SOURCETABLE IDENTIFIER*)
+:
+   (project columndivider)? IDENTIFIER columndivider IDENTIFIER
+   ->^(SOURCETABLE project? IDENTIFIER IDENTIFIER)
 ;
 
 fragment LIMITEXPRESSION:;

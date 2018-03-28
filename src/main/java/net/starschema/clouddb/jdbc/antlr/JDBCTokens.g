@@ -168,7 +168,7 @@ DIGIT+
 /**    Any Identifier (Used for function names, column names etc)*/
 IDENTIFIER
 :
-    (LOWCHAR | HIGHCHAR | '_' | DIGIT)(LOWCHAR | HIGHCHAR | DIGIT | '_' | '%')*
+    (LOWCHAR | HIGHCHAR | '_' | DIGIT)(LOWCHAR | HIGHCHAR | DIGIT | '-' | '_' | '%')*
 ;
 
 fragment NL

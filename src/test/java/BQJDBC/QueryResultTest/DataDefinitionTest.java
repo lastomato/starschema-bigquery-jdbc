@@ -45,6 +45,24 @@ public class DataDefinitionTest extends BaseTest {
     }
 
     @Test
+    public void dropTable_withProject() {
+        executeUpdateRequireSuccess("drop table if exists `ohdsi-in-a-box`.starschema.t1;", 0);
+        executeUpdateRequireSuccess("create table `ohdsi-in-a-box`.starschema.t1 (c1 int)", 0);
+
+        String dropTable = "drop table `ohdsi-in-a-box`.starschema.t1";
+        logger.info("Running test: drop table:" + newLine + dropTable);
+        int result = executeUpdate(dropTable, false);
+        Assert.assertEquals(0, result);
+
+        executeUpdateRequireSuccess("create table starschema.t1 (c1 int)", 0);
+
+        dropTable = "drop table ohdsi-in-a-box.starschema.t1";
+        logger.info("Running test: drop table:" + newLine + dropTable);
+        result = executeUpdate(dropTable, false);
+        Assert.assertEquals(0, result);
+    }
+
+    @Test
     public void dropTableIfExists() {
         executeUpdateRequireSuccess("create table starschema.t1 (c1 int)", 0);
 
